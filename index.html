@@ -4,6 +4,20 @@
   <title>Schedule Reminder</title>
 </head>
 <body>
+    <div id="authSection">
+        <h2>Account (optional)</h2>
+        <div id="loggedOutView">
+            <input id="email" type="email" placeholder="Email" />
+            <input id="password" type="password" placeholder="Password" />
+            <button id="signUpBtn">Sign Up</button>
+            <button id="signInBtn">Sign In</button>
+        </div>
+        <div id="loggedInView" style="display: none;">
+            <span id="userEmail"></span>
+            <button id="signOutBtn">Sign Out</button>
+        </div>
+        <p id="authError" style="color: red;"></p>
+    </div>
   <h2 id="formTitle">Add Reminder</h2>
   <input id="name" placeholder="Name" />
   <input id="info" placeholder="Info (optional)" />
@@ -12,6 +26,69 @@
 
   <h2>Your Reminders</h2>
   <ul id="list"></ul>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import {
+        getAuth,
+        createUserWithEmailAndPassword,
+        signInWithEmailAndPassword,
+        signOut,
+        onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDRrzw3kbk-s7lG8PUgWtzzOF2GUGEMvCc",
+        authDomain: "schedule-reminder-f705a.firebaseapp.com",
+        projectId: "schedule-reminder-f705a",
+        storageBucket: "schedule-reminder-f705a.firebasestorage.app",
+        messagingSenderId: "441299592379",
+        appId: "1:441299592379:web:ae1374d74e00af7ab2f59e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const authError = document.getElementById('authError');
+    const loggedOutView = document.getElementById('loggedOutView');
+    const loggedInView = document.getElementById('loggedInView');
+    const userEmailSpan = document.getElementById('userEmail');
+
+    document.getElementById('signUpBtn').addEventListener('click', async () => {
+        authError.innerText = '';
+        try {
+        await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+        } catch (err) {
+        authError.innerText = err.message;
+        }
+    });
+
+    document.getElementById('signInBtn').addEventListener('click', async () => {
+        authError.innerText = '';
+        try {
+        await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+        } catch (err) {
+        authError.innerText = err.message;
+        }
+    });
+
+    document.getElementById('signOutBtn').addEventListener('click', async () => {
+        await signOut(auth);
+    });
+
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+        loggedOutView.style.display = 'none';
+        loggedInView.style.display = 'block';
+        userEmailSpan.innerText = user.email;
+        } else {
+        loggedOutView.style.display = 'block';
+        loggedInView.style.display = 'none';
+        }
+    });
+    </script>
 
   <script>
     let editingId = null; // null = adding new, otherwise editing this id
