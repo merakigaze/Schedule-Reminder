@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Schedule Reminder</title>
+</head>
+<body>
+  <h2 id="formTitle">Add Reminder</h2>
+  <input id="name" placeholder="Name" />
+  <input id="info" placeholder="Info (optional)" />
+  <input id="time" type="time" />
+  <button id="addBtn">Add</button>
+
+  <h2>Your Reminders</h2>
+  <ul id="list"></ul>
+
+  <script>
+    let editingId = null; // null = adding new, otherwise editing this id
+
+    async function refreshList() {
+      const reminders = await window.api.getReminders();
+      const today = new Date().toISOString().slice(0, 10);
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+
+      reminders.forEach(r => {
+        const li = document.createElement('li');
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = r.doneDate === today;
+        checkbox.addEventListener('change', async () => {
+          await window.api.setDone(r.id, checkbox.checked);
+        });
+
+        const label = document.createElement('span');
+        label.innerText = ` ${r.time} - ${r.name}${r.info ? ' (' + r.info + ')' : ''} `;
+
+        const editBtn = document.createElement('button');
+        editBtn.innerText = 'Edit';
+        editBtn.addEventListener('click', () => {
+          editingId = r.id;
+          document.getElementById('name').value = r.name;
+          document.getElementById('info').value = r.info;
+          document.getElementById('time').value = r.time;
+          document.getElementById('addBtn').innerText = 'Save';
+          document.getElementById('formTitle').innerText = 'Edit Reminder';
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.innerText = 'Delete';
+        deleteBtn.addEventListener('click', async () => {
+          await window.api.deleteReminder(r.id);
+          await refreshList();
+        });
+
+        li.appendChild(checkbox);
+        li.appendChild(label);
+        li.appendChild(editBtn);
+        li.appendChild(deleteBtn);
+        list.appendChild(li);
+      });
+    }
+
+    document.getElementById('addBtn').addEventListener('click', async () => {
+      const name = document.getElementById('name').value;
+      const info = document.getElementById('info').value;
+      const time = document.getElementById('time').value;
+
+      if (!name || !time) return;
+
+      if (editingId) {
+        await window.api.editReminder({ id: editingId, name, info, time });
+        editingId = null;
+        document.getElementById('addBtn').innerText = 'Add';
+        document.getElementById('formTitle').innerText = 'Add Reminder';
+      } else {
+        await window.api.addReminder({
+          id: Date.now().toString(),
+          name,
+          info,
+          time
+        });
+      }
+
+      await refreshList();
+      document.getElementById('name').value = '';
+      document.getElementById('info').value = '';
+      document.getElementById('time').value = '';
+    });
+
+    refreshList();
+    setInterval(refreshList, 15000);
+  </script>
+</body>
+</html>
