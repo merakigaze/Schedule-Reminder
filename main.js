@@ -1,6 +1,10 @@
-const { app, BrowserWindow, ipcMain, Notification } = require('electron');
-const path = require('path');
-const fs = require('fs');
+import { app, BrowserWindow, ipcMain, Notification } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const dataPath = path.join(app.getPath('userData'), 'reminders.json');
 
@@ -63,7 +67,7 @@ function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.cjs')
     }
   });
 
@@ -103,8 +107,6 @@ ipcMain.handle('edit-reminder', (event, updated) => {
     target.name = updated.name;
     target.info = updated.info;
     target.time = updated.time;
-    // Note: if the time changes, you may want to reset lastNotified
-    // so it can notify again today at the new time:
     target.lastNotified = null;
   }
   saveReminders(reminders);
@@ -120,5 +122,5 @@ ipcMain.handle('delete-reminder', (event, id) => {
 
 app.whenReady().then(() => {
   createWindow();
-  setInterval(checkReminders, 1000); // check every 15 seconds now
+  setInterval(checkReminders, 1000);
 });
