@@ -4,16 +4,25 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
-    "electron": "^43.1.0"
+    "electron": "^43.1.0",
+    "electron-builder": "^24.13.3"
   },
   "dependencies": {
     "firebase": "^12.16.0"
+  },
+  "build": {
+    "appId": "com.yourname.schedulereminder",
+    "productName": "Schedule Reminder",
+    "win": {
+      "target": "nsis"
+    }
   }
 }

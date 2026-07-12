@@ -2,171 +2,344 @@
 <html>
 <head>
   <title>Schedule Reminder</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-    <div id="authSection">
-        <h2>Account (optional)</h2>
-        <div id="loggedOutView">
-            <input id="email" type="email" placeholder="Email" />
-            <input id="password" type="password" placeholder="Password" />
-            <button id="signUpBtn">Sign Up</button>
-            <button id="signInBtn">Sign In</button>
+  <div id="app">
+    <main id="viewContainer">
+      <section id="dailyView" class="view active">
+        <div id="authSection">
+            <h2>Account (optional)</h2>
+            <div id="loggedOutView">
+                <input id="email" type="email" placeholder="Email" />
+                <input id="password" type="password" placeholder="Password" />
+                <button id="signUpBtn">Sign Up</button>
+                <button id="signInBtn">Sign In</button>
+            </div>
+            <div id="loggedInView" style="display: none;">
+                <span id="userEmail"></span>
+                <button id="signOutBtn">Sign Out</button>
+            </div>
+            <p id="authError" style="color: red;"></p>
         </div>
-        <div id="loggedInView" style="display: none;">
-            <span id="userEmail"></span>
-            <button id="signOutBtn">Sign Out</button>
-        </div>
-        <p id="authError" style="color: red;"></p>
-    </div>
-  <h2 id="formTitle">Add Reminder</h2>
-  <input id="name" placeholder="Name" />
-  <input id="info" placeholder="Info (optional)" />
-  <input id="time" type="time" />
-  <button id="addBtn">Add</button>
+        <h2 id="formTitle">Add Reminder</h2>
+        <input id="name" placeholder="Name" />
+        <input id="info" placeholder="Info (optional)" />
+        <input id="time" type="time" />
+        <button id="addBtn">Add</button>
 
-  <h2>Your Reminders</h2>
-  <ul id="list"></ul>
+        <h2>Your Reminders</h2>
+        <ul id="list"></ul>
+      </section>
+
+      <section id="monthlyView" class="view">
+        <div class="placeholder">
+          <div class="placeholder-icon">🗓️</div>
+          <p>Monthly Reminder</p>
+          <p class="muted">Coming soon</p>
+        </div>
+      </section>
+    </main>
+
+    <nav id="tabBar">
+      <button class="tab-btn active" data-view="dailyView">
+        <span class="tab-icon">📅</span>
+        <span class="tab-label">Daily Reminder</span>
+      </button>
+      <button class="tab-btn" data-view="monthlyView">
+        <span class="tab-icon">🗓️</span>
+        <span class="tab-label">Monthly Reminder</span>
+      </button>
+    </nav>
+  </div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-    import {
-        getAuth,
-        createUserWithEmailAndPassword,
-        signInWithEmailAndPassword,
-        signOut,
-        onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    getFirestore,
+    collection,
+    doc,
+    setDoc,
+    deleteDoc,
+    onSnapshot,
+    enableIndexedDbPersistence
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-    const firebaseConfig = {
-        apiKey: "AIzaSyDRrzw3kbk-s7lG8PUgWtzzOF2GUGEMvCc",
-        authDomain: "schedule-reminder-f705a.firebaseapp.com",
-        projectId: "schedule-reminder-f705a",
-        storageBucket: "schedule-reminder-f705a.firebasestorage.app",
-        messagingSenderId: "441299592379",
-        appId: "1:441299592379:web:ae1374d74e00af7ab2f59e"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyDRrzw3kbk-s7lG8PUgWtzzOF2GUGEMvCc",
+    authDomain: "schedule-reminder-f705a.firebaseapp.com",
+    projectId: "schedule-reminder-f705a",
+    storageBucket: "schedule-reminder-f705a.firebasestorage.app",
+    messagingSenderId: "441299592379",
+    appId: "1:441299592379:web:ae1374d74e00af7ab2f59e"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
 
-    const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password');
-    const authError = document.getElementById('authError');
-    const loggedOutView = document.getElementById('loggedOutView');
-    const loggedInView = document.getElementById('loggedInView');
-    const userEmailSpan = document.getElementById('userEmail');
+  // Enable offline caching/sync for Firestore
+  enableIndexedDbPersistence(db).catch((err) => {
+    console.warn('Offline persistence not enabled:', err.code);
+  });
 
-    document.getElementById('signUpBtn').addEventListener('click', async () => {
-        authError.innerText = '';
-        try {
-        await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-        } catch (err) {
-        authError.innerText = err.message;
-        }
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
+  const authError = document.getElementById('authError');
+  const loggedOutView = document.getElementById('loggedOutView');
+  const loggedInView = document.getElementById('loggedInView');
+  const userEmailSpan = document.getElementById('userEmail');
+
+  document.getElementById('signUpBtn').addEventListener('click', async () => {
+    authError.innerText = '';
+    try {
+      await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+    } catch (err) {
+      authError.innerText = err.message;
+    }
+  });
+
+  document.getElementById('signInBtn').addEventListener('click', async () => {
+    authError.innerText = '';
+    try {
+      await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+    } catch (err) {
+      authError.innerText = err.message;
+    }
+  });
+
+  document.getElementById('signOutBtn').addEventListener('click', async () => {
+    await signOut(auth);
+  });
+
+  // ---- Shared state ----
+  let currentUser = null;
+  let unsubscribeSnapshot = null;
+
+  onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+
+    if (user) {
+      loggedOutView.style.display = 'none';
+      loggedInView.style.display = 'block';
+      userEmailSpan.innerText = user.email;
+      startCloudSync(user.uid);
+    } else {
+      loggedOutView.style.display = 'block';
+      loggedInView.style.display = 'none';
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+        unsubscribeSnapshot = null;
+      }
+      window.api.syncCloudReminders([]); // main process should stop tracking cloud reminders
+      refreshList(); // fall back to local
+    }
+  });
+
+  function startCloudSync(uid) {
+    const remindersRef = collection(db, 'users', uid, 'reminders');
+
+    // Real-time listener: fires immediately with cached/local data,
+    // then again whenever cloud data changes (including from other devices)
+    unsubscribeSnapshot = onSnapshot(remindersRef, (snapshot) => {
+      const reminders = [];
+      snapshot.forEach(docSnap => {
+        reminders.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      renderReminders(sortByTime(reminders));
+      // main process can't reach Firestore directly, so push the live list over
+      // so it can fire OS notifications for cloud reminders too
+      window.api.syncCloudReminders(reminders);
     });
+  }
 
-    document.getElementById('signInBtn').addEventListener('click', async () => {
-        authError.innerText = '';
-        try {
-        await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-        } catch (err) {
-        authError.innerText = err.message;
-        }
-    });
+  function sortByTime(reminders) {
+    return [...reminders].sort((a, b) => a.time.localeCompare(b.time));
+  }
 
-    document.getElementById('signOutBtn').addEventListener('click', async () => {
-        await signOut(auth);
+  // ---- Cloud CRUD functions ----
+  async function cloudAddReminder(reminder) {
+    const ref = doc(collection(db, 'users', currentUser.uid, 'reminders'));
+    await setDoc(ref, {
+      name: reminder.name,
+      info: reminder.info,
+      time: reminder.time,
+      doneDate: null,
+      lastNotified: null
     });
+  }
 
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-        loggedOutView.style.display = 'none';
-        loggedInView.style.display = 'block';
-        userEmailSpan.innerText = user.email;
-        } else {
-        loggedOutView.style.display = 'block';
-        loggedInView.style.display = 'none';
-        }
-    });
-    </script>
+  async function cloudEditReminder(updated) {
+    const ref = doc(db, 'users', currentUser.uid, 'reminders', updated.id);
+    await setDoc(ref, {
+      name: updated.name,
+      info: updated.info,
+      time: updated.time,
+      lastNotified: null
+    }, { merge: true });
+  }
+
+  async function cloudSetDone(id, done) {
+    const today = new Date().toISOString().slice(0, 10);
+    const ref = doc(db, 'users', currentUser.uid, 'reminders', id);
+    await setDoc(ref, { doneDate: done ? today : null }, { merge: true });
+  }
+
+  async function cloudDeleteReminder(id) {
+    const ref = doc(db, 'users', currentUser.uid, 'reminders', id);
+    await deleteDoc(ref);
+  }
+
+  async function cloudSetLastNotified(id) {
+    const today = new Date().toISOString().slice(0, 10);
+    const ref = doc(db, 'users', currentUser.uid, 'reminders', id);
+    await setDoc(ref, { lastNotified: today }, { merge: true });
+  }
+
+  // Expose these so the other script block (reminder UI logic) can use them
+  window.cloudApi = {
+    isLoggedIn: () => !!currentUser,
+    addReminder: cloudAddReminder,
+    editReminder: cloudEditReminder,
+    setDone: cloudSetDone,
+    deleteReminder: cloudDeleteReminder
+  };
+  window.dispatchEvent(new Event('cloudApiReady'));
+
+  // main process fires these after showing a notification for a cloud reminder,
+  // since it can only update the local reminders.json itself, not Firestore
+  window.api.onMarkCloudNotified((id) => {
+    if (currentUser) cloudSetLastNotified(id);
+  });
+  window.api.onMarkCloudDone((id) => {
+    if (currentUser) cloudSetDone(id, true);
+  });
+
+  // renderReminders and refreshList are defined in the other script block below,
+  // but need to exist before onSnapshot can call them — see note after this code block
+</script>
 
   <script>
-    let editingId = null; // null = adding new, otherwise editing this id
+  let editingId = null; // null = adding new, otherwise editing this id
 
-    async function refreshList() {
-      const reminders = await window.api.getReminders();
-      const today = new Date().toISOString().slice(0, 10);
-      const list = document.getElementById('list');
-      list.innerHTML = '';
+  function renderReminders(reminders) {
+    const today = new Date().toISOString().slice(0, 10);
+    const list = document.getElementById('list');
+    list.innerHTML = '';
 
-      reminders.forEach(r => {
-        const li = document.createElement('li');
+    reminders.forEach(r => {
+      const li = document.createElement('li');
 
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = r.doneDate === today;
-        checkbox.addEventListener('change', async () => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = r.doneDate === today;
+      checkbox.addEventListener('change', async () => {
+        if (window.cloudApi.isLoggedIn()) {
+          await window.cloudApi.setDone(r.id, checkbox.checked);
+        } else {
           await window.api.setDone(r.id, checkbox.checked);
-        });
+          await refreshList();
+        }
+      });
 
-        const label = document.createElement('span');
-        label.innerText = ` ${r.time} - ${r.name}${r.info ? ' (' + r.info + ')' : ''} `;
+      const label = document.createElement('span');
+      label.innerText = ` ${r.time} - ${r.name}${r.info ? ' (' + r.info + ')' : ''} `;
 
-        const editBtn = document.createElement('button');
-        editBtn.innerText = 'Edit';
-        editBtn.addEventListener('click', () => {
-          editingId = r.id;
-          document.getElementById('name').value = r.name;
-          document.getElementById('info').value = r.info;
-          document.getElementById('time').value = r.time;
-          document.getElementById('addBtn').innerText = 'Save';
-          document.getElementById('formTitle').innerText = 'Edit Reminder';
-        });
+      const editBtn = document.createElement('button');
+      editBtn.innerText = 'Edit';
+      editBtn.addEventListener('click', () => {
+        editingId = r.id;
+        document.getElementById('name').value = r.name;
+        document.getElementById('info').value = r.info;
+        document.getElementById('time').value = r.time;
+        document.getElementById('addBtn').innerText = 'Save';
+        document.getElementById('formTitle').innerText = 'Edit Reminder';
+      });
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.innerText = 'Delete';
-        deleteBtn.addEventListener('click', async () => {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.innerText = 'Delete';
+      deleteBtn.addEventListener('click', async () => {
+        if (window.cloudApi.isLoggedIn()) {
+          await window.cloudApi.deleteReminder(r.id);
+        } else {
           await window.api.deleteReminder(r.id);
           await refreshList();
-        });
-
-        li.appendChild(checkbox);
-        li.appendChild(label);
-        li.appendChild(editBtn);
-        li.appendChild(deleteBtn);
-        list.appendChild(li);
+        }
       });
+
+      li.appendChild(checkbox);
+      li.appendChild(label);
+      li.appendChild(editBtn);
+      li.appendChild(deleteBtn);
+      list.appendChild(li);
+    });
+  }
+
+  // Local-only refresh (used when NOT logged in)
+  async function refreshList() {
+    if (window.cloudApi.isLoggedIn()) return; // cloud mode handles its own rendering via onSnapshot
+    const reminders = await window.api.getReminders();
+    renderReminders(reminders);
+  }
+
+  document.getElementById('addBtn').addEventListener('click', async () => {
+    const name = document.getElementById('name').value;
+    const info = document.getElementById('info').value;
+    const time = document.getElementById('time').value;
+
+    if (!name || !time) return;
+
+    const loggedIn = window.cloudApi.isLoggedIn();
+
+    if (editingId) {
+      const updated = { id: editingId, name, info, time };
+      if (loggedIn) {
+        await window.cloudApi.editReminder(updated);
+      } else {
+        await window.api.editReminder(updated);
+      }
+      editingId = null;
+      document.getElementById('addBtn').innerText = 'Add';
+      document.getElementById('formTitle').innerText = 'Add Reminder';
+    } else {
+      const reminder = { name, info, time };
+      if (loggedIn) {
+        await window.cloudApi.addReminder(reminder);
+      } else {
+        await window.api.addReminder({ id: Date.now().toString(), ...reminder });
+      }
     }
 
-    document.getElementById('addBtn').addEventListener('click', async () => {
-      const name = document.getElementById('name').value;
-      const info = document.getElementById('info').value;
-      const time = document.getElementById('time').value;
+    if (!loggedIn) await refreshList();
 
-      if (!name || !time) return;
+    document.getElementById('name').value = '';
+    document.getElementById('info').value = '';
+    document.getElementById('time').value = '';
+  });
 
-      if (editingId) {
-        await window.api.editReminder({ id: editingId, name, info, time });
-        editingId = null;
-        document.getElementById('addBtn').innerText = 'Add';
-        document.getElementById('formTitle').innerText = 'Add Reminder';
-      } else {
-        await window.api.addReminder({
-          id: Date.now().toString(),
-          name,
-          info,
-          time
-        });
-      }
-
-      await refreshList();
-      document.getElementById('name').value = '';
-      document.getElementById('info').value = '';
-      document.getElementById('time').value = '';
-    });
-
+    window.addEventListener('cloudApiReady', () => {
     refreshList();
     setInterval(refreshList, 15000);
-  </script>
+    });
+</script>
+
+  <script>
+  // ---- Tab navigation ----
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.view).classList.add('active');
+    });
+  });
+</script>
 </body>
 </html>

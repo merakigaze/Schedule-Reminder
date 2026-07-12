@@ -25,6 +25,25 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 }
 
+function fireNotification(r, onClick) {
+  const notification = new Notification({
+    title: r.name,
+    body: r.info || 'Reminder!',
+    timeoutType: 'never'
+  });
+  notification.on('click', onClick);
+  notification.show();
+}
+
+let mainWindow = null;
+
+// Cloud reminders live in Firestore, not the local file, so the renderer pushes
+// its live copy here whenever it changes (see 'cloud-reminders-updated').
+let cloudReminders = [];
+// Guards against re-notifying while waiting for the Firestore round-trip that
+// persists lastNotified back to the cloud reminder (see 'mark-cloud-notified').
+const cloudNotifiedGuard = new Map(); // id -> "YYYY-MM-DD"
+
 function checkReminders() {
   const reminders = loadReminders();
   const now = new Date();
@@ -37,13 +56,7 @@ function checkReminders() {
     const alreadyNotifiedToday = r.lastNotified === today;
 
     if (r.time === currentTime && !alreadyDoneToday && !alreadyNotifiedToday) {
-      const notification = new Notification({
-        title: r.name,
-        body: r.info || 'Reminder!',
-        timeoutType: 'never'
-      });
-
-      notification.on('click', () => {
+      fireNotification(r, () => {
         const reminders = loadReminders();
         const target = reminders.find(x => x.id === r.id);
         if (target) {
@@ -52,14 +65,26 @@ function checkReminders() {
         }
       });
 
-      notification.show();
-
       r.lastNotified = today;
       changed = true;
     }
   });
 
   if (changed) saveReminders(reminders);
+
+  cloudReminders.forEach(r => {
+    const alreadyDoneToday = r.doneDate === today;
+    const alreadyNotifiedToday = r.lastNotified === today || cloudNotifiedGuard.get(r.id) === today;
+
+    if (r.time === currentTime && !alreadyDoneToday && !alreadyNotifiedToday) {
+      fireNotification(r, () => {
+        mainWindow?.webContents.send('mark-cloud-done', r.id);
+      });
+
+      cloudNotifiedGuard.set(r.id, today);
+      mainWindow?.webContents.send('mark-cloud-notified', r.id);
+    }
+  });
 }
 
 function createWindow() {
@@ -72,6 +97,7 @@ function createWindow() {
   });
 
   win.loadFile('index.html');
+  mainWindow = win;
 }
 
 function sortByTime(reminders) {
@@ -118,6 +144,10 @@ ipcMain.handle('delete-reminder', (event, id) => {
   reminders = reminders.filter(r => r.id !== id);
   saveReminders(reminders);
   return reminders;
+});
+
+ipcMain.on('cloud-reminders-updated', (event, reminders) => {
+  cloudReminders = reminders || [];
 });
 
 app.whenReady().then(() => {
