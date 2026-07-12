@@ -56,6 +56,7 @@
           </select>
           <button id="monthlyAddBtn">Add</button>
           <button id="closeDayPanelBtn">Close</button>
+          <p id="monthlyError" style="color: red;"></p>
         </div>
       </section>
     </main>
@@ -505,8 +506,17 @@
     document.getElementById('monthlyFormTitle').innerText = 'Add Reminder';
     document.getElementById('monthlyAddBtn').innerText = 'Add';
     clearMonthlyForm();
+    document.getElementById('monthlyError').innerText = '';
     renderMonthlyCalendar(monthlyReminders); // refresh selected-day highlight
     document.getElementById('dayPanel').style.display = 'block';
+  }
+
+  function showMonthlyError(err) {
+    console.error(err);
+    document.getElementById('monthlyError').innerText =
+      err && err.code === 'permission-denied'
+        ? 'Cloud sync for monthly reminders is not enabled yet (Firestore rules need updating).'
+        : (err && err.message) || 'Something went wrong.';
   }
 
   function renderDayPanel(dateStr) {
@@ -525,11 +535,16 @@
       checkbox.type = 'checkbox';
       checkbox.checked = window.recurrence.isDoneOn(r, dateStr);
       checkbox.addEventListener('change', async () => {
-        if (window.cloudApi.isLoggedIn()) {
-          await window.cloudApi.setMonthlyDone(r.id, dateStr, checkbox.checked);
-        } else {
-          await window.api.setMonthlyDone(r.id, dateStr, checkbox.checked);
-          await refreshMonthlyList();
+        try {
+          if (window.cloudApi.isLoggedIn()) {
+            await window.cloudApi.setMonthlyDone(r.id, dateStr, checkbox.checked);
+          } else {
+            await window.api.setMonthlyDone(r.id, dateStr, checkbox.checked);
+            await refreshMonthlyList();
+          }
+        } catch (err) {
+          checkbox.checked = !checkbox.checked; // revert the optimistic UI change
+          showMonthlyError(err);
         }
       });
 
@@ -552,11 +567,15 @@
       const deleteBtn = document.createElement('button');
       deleteBtn.innerText = 'Delete';
       deleteBtn.addEventListener('click', async () => {
-        if (window.cloudApi.isLoggedIn()) {
-          await window.cloudApi.deleteMonthlyReminder(r.id);
-        } else {
-          await window.api.deleteMonthlyReminder(r.id);
-          await refreshMonthlyList();
+        try {
+          if (window.cloudApi.isLoggedIn()) {
+            await window.cloudApi.deleteMonthlyReminder(r.id);
+          } else {
+            await window.api.deleteMonthlyReminder(r.id);
+            await refreshMonthlyList();
+          }
+        } catch (err) {
+          showMonthlyError(err);
         }
       });
 
@@ -601,28 +620,33 @@
 
     const loggedIn = window.cloudApi.isLoggedIn();
 
-    if (monthlyEditingId) {
-      const updated = { id: monthlyEditingId, name, info, date: selectedDayStr, time, repeat };
-      if (loggedIn) {
-        await window.cloudApi.editMonthlyReminder(updated);
+    try {
+      if (monthlyEditingId) {
+        const updated = { id: monthlyEditingId, name, info, date: selectedDayStr, time, repeat };
+        if (loggedIn) {
+          await window.cloudApi.editMonthlyReminder(updated);
+        } else {
+          await window.api.editMonthlyReminder(updated);
+        }
+        monthlyEditingId = null;
+        document.getElementById('monthlyAddBtn').innerText = 'Add';
+        document.getElementById('monthlyFormTitle').innerText = 'Add Reminder';
       } else {
-        await window.api.editMonthlyReminder(updated);
+        const reminder = { name, info, date: selectedDayStr, time, repeat };
+        if (loggedIn) {
+          await window.cloudApi.addMonthlyReminder(reminder);
+        } else {
+          await window.api.addMonthlyReminder({ id: Date.now().toString(), ...reminder });
+        }
       }
-      monthlyEditingId = null;
-      document.getElementById('monthlyAddBtn').innerText = 'Add';
-      document.getElementById('monthlyFormTitle').innerText = 'Add Reminder';
-    } else {
-      const reminder = { name, info, date: selectedDayStr, time, repeat };
-      if (loggedIn) {
-        await window.cloudApi.addMonthlyReminder(reminder);
-      } else {
-        await window.api.addMonthlyReminder({ id: Date.now().toString(), ...reminder });
-      }
+
+      if (!loggedIn) await refreshMonthlyList();
+
+      document.getElementById('monthlyError').innerText = '';
+      clearMonthlyForm();
+    } catch (err) {
+      showMonthlyError(err);
     }
-
-    if (!loggedIn) await refreshMonthlyList();
-
-    clearMonthlyForm();
   });
 
   window.addEventListener('cloudApiReady', () => {
