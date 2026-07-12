@@ -88,3 +88,94 @@ html, body {
 .tab-btn:hover {
   color: #2563eb;
 }
+
+/* Monthly calendar */
+#monthlyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+#monthlyHeader h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.cal-nav-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 12px;
+  cursor: pointer;
+  color: #1f2430;
+}
+
+.cal-nav-btn:hover {
+  color: #2563eb;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 12px;
+  color: #9aa1ac;
+  padding: 4px 0;
+}
+
+.cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #ffffff;
+  border: 1px solid #e0e2e7;
+  font-size: 13px;
+}
+
+.cal-day.empty {
+  visibility: hidden;
+  cursor: default;
+}
+
+.cal-day:hover {
+  border-color: #2563eb;
+}
+
+.cal-day.today {
+  border-color: #2563eb;
+  font-weight: bold;
+}
+
+.cal-day.selected {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.cal-dot {
+  position: absolute;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.cal-day.selected .cal-dot {
+  background: #ffffff;
+}
+
+#dayPanel {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e0e2e7;
+}

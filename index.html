@@ -33,10 +33,29 @@
       </section>
 
       <section id="monthlyView" class="view">
-        <div class="placeholder">
-          <div class="placeholder-icon">🗓️</div>
-          <p>Monthly Reminder</p>
-          <p class="muted">Coming soon</p>
+        <div id="monthlyHeader">
+          <button id="prevMonthBtn" class="cal-nav-btn">‹</button>
+          <h2 id="monthLabel"></h2>
+          <button id="nextMonthBtn" class="cal-nav-btn">›</button>
+        </div>
+        <div id="calendarGrid" class="calendar-grid"></div>
+
+        <div id="dayPanel" style="display: none;">
+          <h3 id="dayPanelTitle"></h3>
+          <ul id="dayReminderList"></ul>
+
+          <h4 id="monthlyFormTitle">Add Reminder</h4>
+          <input id="monthlyName" placeholder="Name" />
+          <input id="monthlyInfo" placeholder="Info (optional)" />
+          <input id="monthlyTime" type="time" />
+          <select id="monthlyRepeat">
+            <option value="none">Does not repeat</option>
+            <option value="daily">Repeats daily</option>
+            <option value="weekly">Repeats weekly</option>
+            <option value="monthly">Repeats monthly</option>
+          </select>
+          <button id="monthlyAddBtn">Add</button>
+          <button id="closeDayPanelBtn">Close</button>
         </div>
       </section>
     </main>
@@ -69,8 +88,12 @@
     setDoc,
     deleteDoc,
     onSnapshot,
-    enableIndexedDbPersistence
+    enableIndexedDbPersistence,
+    arrayUnion,
+    arrayRemove
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { occursOn, isDoneOn, getOccurrencesInMonth, daysInMonth } from './recurrence.js';
+  window.recurrence = { occursOn, isDoneOn, getOccurrencesInMonth, daysInMonth };
 
   const firebaseConfig = {
     apiKey: "AIzaSyDRrzw3kbk-s7lG8PUgWtzzOF2GUGEMvCc",
@@ -122,6 +145,7 @@
   // ---- Shared state ----
   let currentUser = null;
   let unsubscribeSnapshot = null;
+  let unsubscribeMonthlySnapshot = null;
 
   onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -131,6 +155,7 @@
       loggedInView.style.display = 'block';
       userEmailSpan.innerText = user.email;
       startCloudSync(user.uid);
+      startMonthlyCloudSync(user.uid);
     } else {
       loggedOutView.style.display = 'block';
       loggedInView.style.display = 'none';
@@ -138,8 +163,14 @@
         unsubscribeSnapshot();
         unsubscribeSnapshot = null;
       }
+      if (unsubscribeMonthlySnapshot) {
+        unsubscribeMonthlySnapshot();
+        unsubscribeMonthlySnapshot = null;
+      }
       window.api.syncCloudReminders([]); // main process should stop tracking cloud reminders
+      window.api.syncCloudMonthlyReminders([]);
       refreshList(); // fall back to local
+      refreshMonthlyList();
     }
   });
 
@@ -157,6 +188,21 @@
       // main process can't reach Firestore directly, so push the live list over
       // so it can fire OS notifications for cloud reminders too
       window.api.syncCloudReminders(reminders);
+    });
+  }
+
+  function startMonthlyCloudSync(uid) {
+    const monthlyRef = collection(db, 'users', uid, 'monthlyReminders');
+
+    unsubscribeMonthlySnapshot = onSnapshot(monthlyRef, (snapshot) => {
+      const reminders = [];
+      snapshot.forEach(docSnap => {
+        reminders.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      renderMonthlyCalendar(reminders);
+      window.api.syncCloudMonthlyReminders(reminders);
+    }, (error) => {
+      console.warn('Monthly cloud sync error - check Firestore rules cover users/{uid}/monthlyReminders:', error.code);
     });
   }
 
@@ -203,13 +249,61 @@
     await setDoc(ref, { lastNotified: today }, { merge: true });
   }
 
+  // ---- Monthly cloud CRUD functions ----
+  async function cloudAddMonthlyReminder(reminder) {
+    const ref = doc(collection(db, 'users', currentUser.uid, 'monthlyReminders'));
+    await setDoc(ref, {
+      name: reminder.name,
+      info: reminder.info,
+      date: reminder.date,
+      time: reminder.time,
+      repeat: reminder.repeat,
+      completedDates: [],
+      lastNotified: null
+    });
+  }
+
+  async function cloudEditMonthlyReminder(updated) {
+    const ref = doc(db, 'users', currentUser.uid, 'monthlyReminders', updated.id);
+    await setDoc(ref, {
+      name: updated.name,
+      info: updated.info,
+      date: updated.date,
+      time: updated.time,
+      repeat: updated.repeat,
+      lastNotified: null
+    }, { merge: true });
+  }
+
+  async function cloudSetMonthlyDone(id, date, done) {
+    const ref = doc(db, 'users', currentUser.uid, 'monthlyReminders', id);
+    await setDoc(ref, {
+      completedDates: done ? arrayUnion(date) : arrayRemove(date)
+    }, { merge: true });
+  }
+
+  async function cloudDeleteMonthlyReminder(id) {
+    const ref = doc(db, 'users', currentUser.uid, 'monthlyReminders', id);
+    await deleteDoc(ref);
+  }
+
+  async function cloudSetMonthlyLastNotified(id) {
+    const today = new Date().toISOString().slice(0, 10);
+    const ref = doc(db, 'users', currentUser.uid, 'monthlyReminders', id);
+    await setDoc(ref, { lastNotified: today }, { merge: true });
+  }
+
   // Expose these so the other script block (reminder UI logic) can use them
   window.cloudApi = {
     isLoggedIn: () => !!currentUser,
     addReminder: cloudAddReminder,
     editReminder: cloudEditReminder,
     setDone: cloudSetDone,
-    deleteReminder: cloudDeleteReminder
+    deleteReminder: cloudDeleteReminder,
+    addMonthlyReminder: cloudAddMonthlyReminder,
+    editMonthlyReminder: cloudEditMonthlyReminder,
+    setMonthlyDone: cloudSetMonthlyDone,
+    deleteMonthlyReminder: cloudDeleteMonthlyReminder
   };
   window.dispatchEvent(new Event('cloudApiReady'));
 
@@ -220,6 +314,12 @@
   });
   window.api.onMarkCloudDone((id) => {
     if (currentUser) cloudSetDone(id, true);
+  });
+  window.api.onMarkCloudMonthlyNotified((id) => {
+    if (currentUser) cloudSetMonthlyLastNotified(id);
+  });
+  window.api.onMarkCloudMonthlyDone(({ id, date }) => {
+    if (currentUser) cloudSetMonthlyDone(id, date, true);
   });
 
   // renderReminders and refreshList are defined in the other script block below,
@@ -328,6 +428,207 @@
     refreshList();
     setInterval(refreshList, 15000);
     });
+</script>
+
+  <script>
+  // ---- Monthly reminder calendar UI ----
+  let monthlyReminders = []; // last rendered set, cached for day-panel lookups
+  let currentCalendarDate = new Date();
+  let selectedDayStr = null;
+  let monthlyEditingId = null;
+
+  function renderMonthlyCalendar(reminders) {
+    monthlyReminders = reminders;
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth(); // 0-11
+
+    document.getElementById('monthLabel').innerText =
+      currentCalendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+    const grid = document.getElementById('calendarGrid');
+    grid.innerHTML = '';
+
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'cal-weekday';
+      el.innerText = d;
+      grid.appendChild(el);
+    });
+
+    const firstDow = new Date(year, month, 1).getDay();
+    const numDays = window.recurrence.daysInMonth(year, month);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    for (let i = 0; i < firstDow; i++) {
+      const el = document.createElement('div');
+      el.className = 'cal-day empty';
+      grid.appendChild(el);
+    }
+
+    for (let day = 1; day <= numDays; day++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayReminders = reminders.filter(r => window.recurrence.occursOn(r, dateStr));
+
+      const el = document.createElement('div');
+      el.className = 'cal-day';
+      if (dateStr === todayStr) el.classList.add('today');
+      if (dateStr === selectedDayStr) el.classList.add('selected');
+
+      const num = document.createElement('span');
+      num.className = 'cal-day-num';
+      num.innerText = day;
+      el.appendChild(num);
+
+      if (dayReminders.length > 0) {
+        const dot = document.createElement('span');
+        dot.className = 'cal-dot';
+        el.appendChild(dot);
+      }
+
+      el.addEventListener('click', () => selectDay(dateStr));
+      grid.appendChild(el);
+    }
+
+    if (selectedDayStr) renderDayPanel(selectedDayStr);
+  }
+
+  function clearMonthlyForm() {
+    document.getElementById('monthlyName').value = '';
+    document.getElementById('monthlyInfo').value = '';
+    document.getElementById('monthlyTime').value = '';
+    document.getElementById('monthlyRepeat').value = 'none';
+  }
+
+  function selectDay(dateStr) {
+    selectedDayStr = dateStr;
+    monthlyEditingId = null;
+    document.getElementById('monthlyFormTitle').innerText = 'Add Reminder';
+    document.getElementById('monthlyAddBtn').innerText = 'Add';
+    clearMonthlyForm();
+    renderMonthlyCalendar(monthlyReminders); // refresh selected-day highlight
+    document.getElementById('dayPanel').style.display = 'block';
+  }
+
+  function renderDayPanel(dateStr) {
+    document.getElementById('dayPanelTitle').innerText =
+      new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+    const list = document.getElementById('dayReminderList');
+    list.innerHTML = '';
+
+    const dayReminders = monthlyReminders.filter(r => window.recurrence.occursOn(r, dateStr));
+
+    dayReminders.forEach(r => {
+      const li = document.createElement('li');
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = window.recurrence.isDoneOn(r, dateStr);
+      checkbox.addEventListener('change', async () => {
+        if (window.cloudApi.isLoggedIn()) {
+          await window.cloudApi.setMonthlyDone(r.id, dateStr, checkbox.checked);
+        } else {
+          await window.api.setMonthlyDone(r.id, dateStr, checkbox.checked);
+          await refreshMonthlyList();
+        }
+      });
+
+      const label = document.createElement('span');
+      const repeatTag = r.repeat && r.repeat !== 'none' ? ` [${r.repeat}]` : '';
+      label.innerText = ` ${r.time} - ${r.name}${r.info ? ' (' + r.info + ')' : ''}${repeatTag} `;
+
+      const editBtn = document.createElement('button');
+      editBtn.innerText = 'Edit';
+      editBtn.addEventListener('click', () => {
+        monthlyEditingId = r.id;
+        document.getElementById('monthlyName').value = r.name;
+        document.getElementById('monthlyInfo').value = r.info;
+        document.getElementById('monthlyTime').value = r.time;
+        document.getElementById('monthlyRepeat').value = r.repeat;
+        document.getElementById('monthlyAddBtn').innerText = 'Save';
+        document.getElementById('monthlyFormTitle').innerText = 'Edit Reminder';
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.innerText = 'Delete';
+      deleteBtn.addEventListener('click', async () => {
+        if (window.cloudApi.isLoggedIn()) {
+          await window.cloudApi.deleteMonthlyReminder(r.id);
+        } else {
+          await window.api.deleteMonthlyReminder(r.id);
+          await refreshMonthlyList();
+        }
+      });
+
+      li.appendChild(checkbox);
+      li.appendChild(label);
+      li.appendChild(editBtn);
+      li.appendChild(deleteBtn);
+      list.appendChild(li);
+    });
+  }
+
+  // Local-only refresh (used when NOT logged in)
+  async function refreshMonthlyList() {
+    if (window.cloudApi.isLoggedIn()) return; // cloud mode handles its own rendering via onSnapshot
+    const reminders = await window.api.getMonthlyReminders();
+    renderMonthlyCalendar(reminders);
+  }
+
+  document.getElementById('prevMonthBtn').addEventListener('click', () => {
+    currentCalendarDate = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1);
+    renderMonthlyCalendar(monthlyReminders);
+  });
+
+  document.getElementById('nextMonthBtn').addEventListener('click', () => {
+    currentCalendarDate = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1);
+    renderMonthlyCalendar(monthlyReminders);
+  });
+
+  document.getElementById('closeDayPanelBtn').addEventListener('click', () => {
+    selectedDayStr = null;
+    document.getElementById('dayPanel').style.display = 'none';
+    renderMonthlyCalendar(monthlyReminders);
+  });
+
+  document.getElementById('monthlyAddBtn').addEventListener('click', async () => {
+    const name = document.getElementById('monthlyName').value;
+    const info = document.getElementById('monthlyInfo').value;
+    const time = document.getElementById('monthlyTime').value;
+    const repeat = document.getElementById('monthlyRepeat').value;
+
+    if (!name || !time || !selectedDayStr) return;
+
+    const loggedIn = window.cloudApi.isLoggedIn();
+
+    if (monthlyEditingId) {
+      const updated = { id: monthlyEditingId, name, info, date: selectedDayStr, time, repeat };
+      if (loggedIn) {
+        await window.cloudApi.editMonthlyReminder(updated);
+      } else {
+        await window.api.editMonthlyReminder(updated);
+      }
+      monthlyEditingId = null;
+      document.getElementById('monthlyAddBtn').innerText = 'Add';
+      document.getElementById('monthlyFormTitle').innerText = 'Add Reminder';
+    } else {
+      const reminder = { name, info, date: selectedDayStr, time, repeat };
+      if (loggedIn) {
+        await window.cloudApi.addMonthlyReminder(reminder);
+      } else {
+        await window.api.addMonthlyReminder({ id: Date.now().toString(), ...reminder });
+      }
+    }
+
+    if (!loggedIn) await refreshMonthlyList();
+
+    clearMonthlyForm();
+  });
+
+  window.addEventListener('cloudApiReady', () => {
+    refreshMonthlyList();
+    setInterval(refreshMonthlyList, 15000);
+  });
 </script>
 
   <script>
