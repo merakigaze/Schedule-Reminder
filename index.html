@@ -6,22 +6,13 @@
 </head>
 <body>
   <div id="app">
+    <header id="topBar">
+      <span id="appTitle">Schedule Reminder</span>
+      <button id="profileAvatarBtn" class="avatar-btn" title="Profile">👤</button>
+    </header>
+
     <main id="viewContainer">
       <section id="dailyView" class="view active">
-        <div id="authSection">
-            <h2>Account (optional)</h2>
-            <div id="loggedOutView">
-                <input id="email" type="email" placeholder="Email" />
-                <input id="password" type="password" placeholder="Password" />
-                <button id="signUpBtn">Sign Up</button>
-                <button id="signInBtn">Sign In</button>
-            </div>
-            <div id="loggedInView" style="display: none;">
-                <span id="userEmail"></span>
-                <button id="signOutBtn">Sign Out</button>
-            </div>
-            <p id="authError" style="color: red;"></p>
-        </div>
         <h2 id="formTitle">Add Reminder</h2>
         <input id="name" placeholder="Name" />
         <input id="info" placeholder="Info (optional)" />
@@ -57,6 +48,28 @@
           <button id="monthlyAddBtn">Add</button>
           <button id="closeDayPanelBtn">Close</button>
           <p id="monthlyError" style="color: red;"></p>
+        </div>
+      </section>
+
+      <section id="profileView" class="view">
+        <div class="profile-header">
+          <div class="profile-avatar-large">👤</div>
+
+          <div id="loggedInView" style="display: none;">
+            <p id="userEmail"></p>
+            <p id="syncStatus" class="muted"></p>
+            <button id="signOutBtn">Sign Out</button>
+          </div>
+
+          <div id="loggedOutView">
+            <p class="muted">Sign in to sync your reminders across devices.</p>
+            <input id="email" type="email" placeholder="Email" />
+            <input id="password" type="password" placeholder="Password" />
+            <button id="signUpBtn">Sign Up</button>
+            <button id="signInBtn">Sign In</button>
+          </div>
+
+          <p id="authError" style="color: red;"></p>
         </div>
       </section>
     </main>
@@ -147,6 +160,15 @@
   let currentUser = null;
   let unsubscribeSnapshot = null;
   let unsubscribeMonthlySnapshot = null;
+  let lastSyncedAt = null;
+
+  function updateSyncStatusText() {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    el.innerText = lastSyncedAt
+      ? `Cloud sync: last synced ${lastSyncedAt.toLocaleTimeString()}`
+      : 'Cloud sync: waiting for first sync…';
+  }
 
   onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -155,6 +177,8 @@
       loggedOutView.style.display = 'none';
       loggedInView.style.display = 'block';
       userEmailSpan.innerText = user.email;
+      lastSyncedAt = null;
+      updateSyncStatusText();
       startCloudSync(user.uid);
       startMonthlyCloudSync(user.uid);
     } else {
@@ -189,6 +213,8 @@
       // main process can't reach Firestore directly, so push the live list over
       // so it can fire OS notifications for cloud reminders too
       window.api.syncCloudReminders(reminders);
+      lastSyncedAt = new Date();
+      updateSyncStatusText();
     });
   }
 
@@ -202,6 +228,8 @@
       });
       renderMonthlyCalendar(reminders);
       window.api.syncCloudMonthlyReminders(reminders);
+      lastSyncedAt = new Date();
+      updateSyncStatusText();
     }, (error) => {
       console.warn('Monthly cloud sync error - check Firestore rules cover users/{uid}/monthlyReminders:', error.code);
     });
@@ -657,13 +685,21 @@
 
   <script>
   // ---- Tab navigation ----
+  function switchToView(viewId) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+  }
+
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById(btn.dataset.view).classList.add('active');
+      switchToView(btn.dataset.view);
     });
+  });
+
+  document.getElementById('profileAvatarBtn').addEventListener('click', () => {
+    switchToView('profileView');
   });
 </script>
 </body>
